@@ -1,0 +1,234 @@
+---
+title: "MMSS311-2 Homework 1"
+author: "Kevin He"
+date: "April 17, 2019"
+output:
+  html_document:
+    df_print: paged
+  pdf_document: default
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+Load packages...
+```{r}
+library(dplyr)
+library(ggplot2)
+library(broom)
+library(tinytex)
+```
+
+## Regression Questions 
+
+```{r}
+sick_data <- read.csv("sick_data.csv", header = TRUE)
+```
+a. Using OLS
+```{r}
+# Create dummy variable for result
+sick_data$result_dummy <- sick_data$result == "Positive"
+sick_data$result_dummy[sick_data$result_dummy == TRUE] <- 1
+sick_data$result_dummy[sick_data$result_dummy == FALSE] <- 0
+# Run OLS
+ra_ols <- lm(sick_data$result_dummy ~ sick_data$temp + sick_data$bp)
+summary(ra_ols)
+```
+
+b. Using OLS
+```{r}
+ra_ols_fitted <- fitted(ra_ols)
+ra_ols_predicted <- ra_ols_fitted
+ra_ols_predicted[ra_ols_fitted >= 0.5] <- 1
+ra_ols_predicted[ra_ols_fitted < 0.5] <- 0
+ra_ols_resid <- ra_ols_predicted - sick_data$result_dummy
+print(summary(ra_ols_resid))
+plot(ra_ols_predicted, ra_ols_resid)
+```
+  
+The OLS regression does not predict the test results well. This is also evidenced by the line in the ggplot, which doesn't separate the positive and negative results well. 
+
+c. Using OLS
+```{r}
+ra_ols_coef <- coef(ra_ols)
+rc_ols_intercept <- (0.5-ra_ols_coef[1])/(ra_ols_coef[2])
+rc_ols_slope <- -(ra_ols_coef[3]/ra_ols_coef[2])
+```
+0.5 = ra_ols_coef[1] + ra_ols_coef[2]*temp + ra_ols_coef[3]*bp  
+(0.5-ra_ols_coef[1])/(ra_ols_coef[2]*ra_ols_coef[3]) = temp/ra_ols_coef[3] + bp/ra_ols_coef[2]  
+temp = -(ra_ols_coef[3]/ra_ols_coef[2])*bp + (0.5-ra_ols_coef[1])/(ra_ols_coef[2])  
+
+d. Using OLS
+```{r}
+ggplot(sick_data, aes(x = bp, y = temp)) +
+  geom_point(aes(col = result_dummy)) +
+  labs(x="Blood Pressure", y="Temperature") +
+  geom_abline(intercept = rc_ols_intercept, slope = rc_ols_slope)
+```
+
+
+a. Using Logit
+```{r}
+ra_logit <- glm(sick_data$result_dummy ~ sick_data$temp + sick_data$bp, family = binomial)
+summary(ra_logit)
+```
+
+b. Using Logit
+```{r}
+ra_logit_fitted <- predict(ra_logit)
+ra_logit_predicted <- ra_logit_fitted
+ra_logit_predicted[ra_logit_fitted >= 0.5] <- 1
+ra_logit_predicted[ra_logit_fitted < 0.5] <- 0
+ra_logit_resid <- ra_logit_predicted - sick_data$result_dummy
+print(summary(ra_logit_resid))
+```
+The logit model does much better than the ols model. The regression predicts the test results quite well, as is evident in the ggplot in part d. 
+
+c. Using Logit
+```{r}
+rc_logit_coef <- coef(ra_logit)
+rc_logit_intercept <- -(rc_logit_coef[1]/rc_logit_coef[2]) 
+rc_logit_slope <- -(rc_logit_coef[3]/rc_logit_coef[2])
+```
+ln(0.5/(1-0.5)) = rc_logit_coef[1] + rc_logit_coef[2]*temp + rc_logit_coef[3]*bp  
+temp = -(rc_logit_coef[1]/rc_logit_coef[2]) - (rc_logit_coef[3]/rc_logit_coef[2])*bp  
+
+d. Using Logit
+```{r}
+ggplot(sick_data, aes(x = bp, y = temp)) +
+  geom_point(aes(col = result_dummy)) +
+  labs(x="Blood Pressure", y="Temperature") +
+  geom_abline(intercept = rc_logit_intercept, slope = rc_logit_slope)
+```
+
+
+## Regularization/Selection Questions
+
+```{r}
+widget_data <- read.csv("widget_data.csv", header = TRUE)
+```
+a. 
+```{r}
+plot(widget_data$y)
+```
+
+b. 
+```{r}
+library(glmnet)
+grid <- 10^seq(2, -2, length = 100)
+rb_x <- model.matrix(y~., widget_data)[ ,-1]
+rb_y <- widget_data$y
+ridge_mod <- glmnet(rb_x, rb_y, alpha = 0, lambda = grid)
+```
+
+c.
+```{r}
+ridge_result <- tidy(coef(ridge_mod))
+ggplot(ridge_result, aes(x = column, y = value)) +
+  geom_point(aes(col = row)) +
+  labs(x="Lambda", y="Coef. Estimate")
+```
+
+d. 
+```{r}
+ridge_cv <- cv.glmnet(rb_x, rb_y, alpha = 0)
+ridge_bestlambda <- ridge_cv$lambda.min
+print(ridge_bestlambda)
+```
+The best lambda for ridge is 0.3107085
+```{r}
+ridge_mod_bestlambda <- glmnet(rb_x, rb_y, alpha = 0, lambda = 0.3107085)
+print(coef(ridge_mod_bestlambda))
+```
+
+e. 
+```{r}
+lasso_mod <- glmnet(rb_x, rb_y, alpha = 1, lambda = grid)
+lasso_result <- tidy(coef(lasso_mod))
+ggplot(lasso_result, aes(x = column, y = value)) +
+  geom_point(aes(col = row)) +
+  labs(x="Lambda", y="Coef. Estimate")
+```
+```{r}
+lasso_cv <- cv.glmnet(rb_x, rb_y, alpha = 1)
+lasso_bestlambda <- lasso_cv$lambda.min
+print(lasso_bestlambda)
+```
+The best lambda for lasso is 0.1737112
+```{r}
+lasso_mod_bestlambda <- glmnet(rb_x, rb_y, alpha = 1, lambda = 0.1737112)
+print(coef(lasso_mod_bestlambda))
+```
+
+f.
+The results from the two processes are similar.   
+The variables with non-zero coefs from the lasso roughly match the variables with significant coefs from ridge.   
+However, there are some variables from ridge with relatively higher coefs that lasso doesn't include, such as x19.   
+The advantage of using lasso becomes apparant in that the less significant variables automatically get filtered out, allowing us to instantly identify the signficant variables calculated by our model.   
+
+## Classification Questions
+
+```{r}
+library(e1071)
+pol_data <- read.csv("pol_data.csv", header = TRUE)
+```
+a.
+```{r}
+pol_data$group_dummy <- pol_data$group == "Socialcrat"
+pol_data$group_dummy[pol_data$group_dummy == TRUE] <- 1
+pol_data$group_dummy[pol_data$group_dummy == FALSE] <- 0
+# Create dummy variables first 
+# Socialcrat = 1
+# Politicalist = 0
+  
+set.seed(666)
+train_size <- floor(2/3 * nrow(pol_data))
+train_index <- sample(seq_len(nrow(pol_data)), size = train_size)
+pol_train <- pol_data[train_index, ]
+pol_test <- pol_data[-train_index, ]
+```
+Data now split into pol_train (200 obs.) and pol_test (100 obs.)
+Uses seed 666. 
+
+b. 
+First estimate using OLS model
+```{r}
+pol_ols <- lm(group_dummy ~ pol_margin + col_degree + house_income, data = pol_train)
+summary(pol_ols)
+```
+Now estimate using logit model
+```{r}
+pol_logit <- glm(group_dummy ~ pol_margin + col_degree + house_income, data = pol_train, family = binomial)
+summary(pol_logit)
+```
+
+
+c.
+First predict using OLS model 
+```{r}
+pol_ols_predict <- predict(pol_ols, pol_test)
+pol_ols_predict_final <- pol_ols_predict
+pol_ols_predict_final[pol_ols_predict_final >= 0.5] <- 1
+pol_ols_predict_final[pol_ols_predict_final < 0.5] <- 0
+```
+Now predict using logit model
+```{r}
+pol_logit_predict <- predict(pol_logit, pol_test)
+pol_logit_predict_final <- pol_logit_predict
+pol_logit_predict_final[pol_logit_predict_final >= 0.5] <- 1
+pol_logit_predict_final[pol_logit_predict_final < 0.5] <- 0
+```
+
+d.
+```{r}
+pol_resultcomps <- data.frame(pol_test$group_dummy, pol_ols_predict_final, pol_logit_predict_final)
+colnames(pol_resultcomps) <- c("Real class", "OLS Prediction", "Logit Prediction")
+print(pol_resultcomps)
+```
+
+Both models seem to do a good job with the predictions.  
+
+
+
+
